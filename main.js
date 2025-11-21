@@ -270,6 +270,41 @@ async function carritosActivos() {
   }
 }
 
+// verificar conexiones
+async function verificarConexiones() {
+  console.log("\n=== Verificando conexiones ===\n");
+  
+  // verificar PostgreSQL
+  try {
+    await pool.query('SELECT NOW()');
+    console.log("✓ Conexión a PostgreSQL exitosa");
+  } catch (error) {
+    console.error("✗ Error al conectar con PostgreSQL:", error.message);
+    process.exit(1);
+  }
+  
+  // verificar MongoDB
+  try {
+    await mongoClient.connect();
+    await mongoClient.db('admin').command({ ping: 1 });
+    console.log("✓ Conexión a MongoDB exitosa");
+  } catch (error) {
+    console.error("✗ Error al conectar con MongoDB:", error.message);
+    process.exit(1);
+  }
+  
+  // verificar Neo4j
+  try {
+    await neo4jDriver.verifyConnectivity();
+    console.log("✓ Conexión a Neo4j exitosa");
+  } catch (error) {
+    console.error("✗ Error al conectar con Neo4j:", error.message);
+    process.exit(1);
+  }
+  
+  console.log("\n=== Todas las conexiones fueron exitosas ===\n");
+}
+
 // menú principal
 async function mainMenu() {
   let salir = false;
@@ -310,4 +345,8 @@ async function mainMenu() {
   }
 }
 
-mainMenu();
+// iniciar programa
+(async () => {
+  await verificarConexiones();
+  await mainMenu();
+})();
