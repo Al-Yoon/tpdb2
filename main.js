@@ -163,13 +163,13 @@ async function compradoresMulticategoria() {
     console.error("Error:", error.message);
   }
 }
-
 // caso 8: productos más conectados usando neo4j
 async function productosMasConectados() {
   console.log("\nProductos más conectados (comprados por más usuarios)\n");
   const session = neo4jDriver.session({ database: 'neo4j' });
   
   try {
+    // cuenta cuántos usuarios distintos compraron cada producto
     const result = await session.run(
       `MATCH (u:Usuario)-[:COMPRO]->(p:Producto)
        RETURN p.titulo AS producto, count(DISTINCT u) AS compradores
@@ -181,6 +181,7 @@ async function productosMasConectados() {
       return;
     }
     
+    // convertir valores neo4j a tipos js
     const datos = result.records.map(r => {
       const compradores = r.get('compradores');
       return {
@@ -194,7 +195,7 @@ async function productosMasConectados() {
   } catch (error) {
     console.error("Error:", error.message);
   } finally {
-    await session.close();
+    await session.close(); 
   }
 }
 
@@ -203,11 +204,10 @@ async function carritosActivos() {
   console.log("\nCarritos activos en MongoDB\n");
   
   try {
-    await mongoClient.connect();
     const db = mongoClient.db('db2');
     const carritos = db.collection('carrito');
     
-    const resultado = await carritos.find({}).toArray();
+    const resultado = await carritos.find({}).toArray(); // obtener carritos
     
     if (resultado.length === 0) {
       console.log("No hay carritos activos");
@@ -216,17 +216,15 @@ async function carritosActivos() {
     
     console.log(`Total de carritos: ${resultado.length}\n`);
     
-    // obtener todos los ids de productos para consultar a postgres
+    // recolectar ids de productos sin duplicados
     const productosIds = [];
     resultado.forEach(carrito => {
       carrito.productos.forEach(p => {
-        if (!productosIds.includes(p.producto_id)) {
-          productosIds.push(p.producto_id);
-        }
+        if (!productosIds.includes(p.producto_id)) productosIds.push(p.producto_id);
       });
     });
     
-    // consultar nombres de productos en postgres
+    // query postgres: obtener título y precio de productos
     const productosQuery = `
       SELECT id_producto, titulo, precio
       FROM productos
@@ -234,34 +232,35 @@ async function carritosActivos() {
     
     const productosResult = await pool.query(productosQuery, [productosIds]);
     
-    // crear un mapa de id -> nombre
+    // mapear productos por id para lookup rápido
     const productosMap = {};
     productosResult.rows.forEach(p => {
-      productosMap[p.id_producto] = {
-        titulo: p.titulo,
-        precio: p.precio
-      };
+      productosMap[p.id_producto] = { titulo: p.titulo, precio: p.precio };
     });
     
-    // mostrar carritos con nombres de productos
     console.log("Detalle de carritos:\n");
+    
     resultado.forEach((carrito, index) => {
       console.log(`\n--- Carrito ${index + 1} ---`);
       console.log(`Usuario: ${carrito.usuario_id}`);
       console.log(`Última actualización: ${new Date(carrito.fecha_actualizacion).toLocaleString('es-AR')}`);
       console.log(`\nProductos:`);
       
-      let totalCarrito = 0;
+      let totalCarrito = 0; // acumulador
+      
       carrito.productos.forEach(prod => {
-        const info = productosMap[prod.producto_id];
+        const info = productosMap[prod.producto_id]; // obtener datos desde postgres
+        
         if (info) {
           const subtotal = info.precio * prod.cantidad;
           totalCarrito += subtotal;
+          
           console.log(`  ${prod.cantidad}x ${info.titulo} - $${info.precio.toLocaleString('es-AR')} c/u = $${subtotal.toLocaleString('es-AR')}`);
         } else {
           console.log(`  ${prod.cantidad}x Producto ${prod.producto_id} (no encontrado en BD)`);
         }
       });
+      
       console.log(`\nTotal del carrito: $${totalCarrito.toLocaleString('es-AR')}`);
     });
     
@@ -285,13 +284,16 @@ async function verificarConexiones() {
   
   // verificar MongoDB
   try {
-    await mongoClient.connect();
+    if (!mongoClient.topology || mongoClient.topology.isClosed()) {
+      await mongoClient.connect();
+    }
     await mongoClient.db('admin').command({ ping: 1 });
     console.log("✓ Conexión a MongoDB exitosa");
   } catch (error) {
     console.error("✗ Error al conectar con MongoDB:", error.message);
     process.exit(1);
   }
+
   
   // verificar Neo4j
   try {
@@ -335,7 +337,6 @@ async function mainMenu() {
       case "0":
         salir = true;
         console.log("\nTerminando el programa");
-        await pool.end();
         await neo4jDriver.close();
         await mongoClient.close();
         break;
